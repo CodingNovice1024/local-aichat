@@ -369,7 +369,7 @@
 </div>
 
 <footer>
-  模型: <a href="https://huggingface.co/onnx-community/Qwen3-0.6B-DQ-ONNX" target="_blank" rel="noopener">onnx-community/Qwen3-0.6B-DQ-ONNX</a>
+  模型: <a href="https://modelscope.cn/onnx-community/Qwen3-0.6B-DQ-ONNX" target="_blank" rel="noopener">onnx-community/Qwen3-0.6B-DQ-ONNX</a>
   · 构建工具：
   <a href="https://huggingface.co/docs/transformers.js" target="_blank" rel="noopener">Transformers.js</a>
 </footer>
@@ -377,6 +377,7 @@
 <script type="module">
   import { pipeline, TextStreamer, env } from
     'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4/dist/transformers.min.js';
+  env.remoteHost = 'https://modelscope.cn';
 
   // ── 全局变量 ──────────────────────────────────────────────────────────────────
   let generator = null;
@@ -502,7 +503,7 @@
       errBox.innerHTML = `
         ❌ 模型加载失败: ${err.message || String(err)}<br><br>
         <strong>可能的原因：</strong><br>
-        1. 网络连接问题，无法访问Hugging Face<br>
+        1. 网络连接问题，无法访问ModelScope<br>
         2. 浏览器不支持WebGPU或WebAssembly<br>
         3. 模型文件暂时不可用<br><br>
         <strong>解决方案：</strong><br>
