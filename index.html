@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>本地AI聊天 — Qwen3-0.6B-DQ</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #23263a;
+      --border: #2e3150;
+      --accent: #5865f2;
+      --accent-hover: #4752c4;
+      --text: #e2e4f0;
+      --text-muted: #7a7f9a;
+      --success: #3ba55d;
+      --warning: #faa61a;
+      --error: #ed4245;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #5865f2 0%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p {
+      margin-top: 6px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .privacy-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(59, 165, 93, 0.15);
+      border: 1px solid rgba(59, 165, 93, 0.4);
+      color: #3ba55d;
+      font-size: 0.78rem;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-top: 10px;
+    }
+    .privacy-badge svg { flex-shrink: 0; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      width: 100%;
+      max-width: 860px;
+    }
+
+    /* ── 模型加载器 ── */
+    #loader-section { margin-bottom: 20px; }
+
+    .loader-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .loader-header h2 { font-size: 1rem; font-weight: 600; }
+
+    .device-pill {
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    .device-pill.webgpu { color: #a78bfa; border-color: #a78bfa55; background: #a78bfa18; }
+    .device-pill.cpu    { color: var(--warning); border-color: #faa61a55; background: #faa61a18; }
+
+    .progress-bar-wrap {
+      background: var(--surface2);
+      border-radius: 6px;
+      height: 10px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #5865f2, #a78bfa);
+      border-radius: 6px;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    .progress-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .file-list {
+      margin-top: 10px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .file-item:last-child { border-bottom: none; }
+    .file-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .file-dot.done { background: var(--success); }
+    .file-dot.loading {
+      background: var(--accent);
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-pct { flex-shrink: 0; color: var(--text); }
+
+    .load-btn {
+      width: 100%;
+      padding: 11px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 14px;
+    }
+    .load-btn:hover:not(:disabled) { background: var(--accent-hover); }
+    .load-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── 聊天器主体 ── */
+    #chat-section { display: none; }
+
+    /* 对话历史区域 */
+    .chat-history {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      min-height: 300px;
+      max-height: 500px;
+      padding: 16px;
+      margin-bottom: 16px;
+      overflow-y: auto;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .message {
+      display: flex;
+      flex-direction: column;
+      max-width: 85%;
+    }
+    .message.user { align-self: flex-end; }
+    .message.assistant { align-self: flex-start; }
+    .message-header {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .user .message-header { justify-content: flex-end; }
+    .message-content {
+      padding: 10px 14px;
+      border-radius: 12px;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .user .message-content {
+      background: var(--accent);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .assistant .message-content {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+    .thinking {
+      color: var(--text-muted);
+      font-style: italic;
+      padding: 10px 0;
+    }
+
+    .text-area-wrap { position: relative; }
+    textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.95rem;
+      padding: 14px 14px 30px 14px; /* 底部留出空间给计数器 */
+      resize: vertical;
+      min-height: 100px;
+      font-family: inherit;
+      line-height: 1.6;
+      transition: border-color 0.2s;
+      outline: none;
+    }
+    textarea:focus { border-color: var(--accent); }
+    textarea::placeholder { color: var(--text-muted); }
+
+    .char-count {
+      position: absolute;
+      bottom: 8px;
+      right: 12px;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .send-btn {
+      width: 100%;
+      padding: 13px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin: 14px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+    .send-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 错误提示 ── */
+    #error-box,
+    #chat-error-box {
+      display: none;
+      background: rgba(237, 66, 69, 0.15);
+      border: 1px solid rgba(237, 66, 69, 0.5);
+      color: #ed4245;
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      margin-top: 12px;
+    }
+
+    /* ── 页脚 ── */
+    footer {
+      margin-top: 28px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 560px) {
+      header h1 { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>💬 本地AI聊天</h1>
+  <p>基于 <strong>Qwen3-0.6B-DQ-ONNX</strong> · 完全在浏览器中运行 · <a href="https://github.com/CodingNovice1024/local-aichat" target="_blank" style="color: #5865f2">Github</a></p>
+  <span class="privacy-badge">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+    </svg>
+    您的对话永远不会离开此设备
+  </span>
+</header>
+
+<!-- ── 模型加载器 ── -->
+<div class="card" id="loader-section">
+  <div class="loader-header">
+    <h2>加载对话模型</h2>
+    <span class="device-pill" id="device-pill">检测中…</span>
+  </div>
+
+  <div class="progress-bar-wrap">
+    <div class="progress-bar" id="progress-bar"></div>
+  </div>
+  <div class="progress-label">
+    <span id="progress-text">准备加载</span>
+    <span id="progress-pct">0%</span>
+  </div>
+
+  <div class="file-list" id="file-list"></div>
+
+  <div id="error-box"></div>
+
+  <button class="load-btn" id="load-btn">
+    ⬇️ 下载并加载模型 (~0.3 GB)
+  </button>
+</div>
+
+<!-- ── 聊天器主体 ── -->
+<div class="card" id="chat-section">
+  <!-- 对话历史显示区 -->
+  <div class="chat-history" id="chat-history">
+    <div class="message assistant">
+      <div class="message-header">🤖 助手</div>
+      <div class="message-content">您好！我是运行在您浏览器中的Qwen3-0.6B-DQ模型。请加载模型后开始与我对话吧。</div>
+    </div>
+  </div>
+
+  <!-- 用户输入区 -->
+  <div class="text-area-wrap">
+    <textarea id="input-text" placeholder="输入您的问题或想聊的内容…" maxlength="2000"></textarea>
+    <span class="char-count" id="char-count">0 / 2000</span>
+  </div>
+
+  <button class="send-btn" id="send-btn">
+    发送
+  </button>
+
+  <div id="chat-error-box"></div>
+</div>
+
+<footer>
+  模型: <a href="https://huggingface.co/onnx-community/Qwen3-0.6B-DQ-ONNX" target="_blank" rel="noopener">onnx-community/Qwen3-0.6B-DQ-ONNX</a>
+  · 构建工具：
+  <a href="https://huggingface.co/docs/transformers.js" target="_blank" rel="noopener">Transformers.js</a>
+</footer>
+
+<script type="module">
+  import { pipeline, TextStreamer, env } from
+    'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4/dist/transformers.min.js';
+
+  // ── 全局变量 ──────────────────────────────────────────────────────────────────
+  let generator = null;
+  let isGenerating = false;
+  const MODEL_ID = 'onnx-community/Qwen3-0.6B-DQ-ONNX';
+  let conversationHistory = [
+    { role: 'system', content: 'You are a helpful AI assistant.' }
+  ];
+
+  // ── 设备检测 ─────────────────────────────────────────────────────────
+  async function detectDevice() {
+    const pill = document.getElementById('device-pill');
+    if (navigator.gpu) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (adapter) {
+          pill.textContent = '⚡ WebGPU';
+          pill.classList.add('webgpu');
+          return 'webgpu';
+        }
+      } catch (_) {}
+    }
+    pill.textContent = '🖥️ CPU (wasm)';
+    pill.classList.add('cpu');
+    return 'wasm';
+  }
+
+  // ── 文件进度跟踪 ────────────────────────────────────────────────────
+  const fileProgress = {};   // { 文件名: { loaded, total } }
+
+  function renderFileList() {
+    const list = document.getElementById('file-list');
+    list.innerHTML = '';
+    for (const [name, info] of Object.entries(fileProgress)) {
+      const pct = info.total > 0
+        ? Math.round((info.loaded / info.total) * 100)
+        : (info.done ? 100 : 0);
+      const dot = document.createElement('div');
+      dot.className = 'file-item';
+      dot.innerHTML = `
+        <span class="file-dot ${info.done ? 'done' : 'loading'}"></span>
+        <span class="file-name" title="${name}">${name}</span>
+        <span class="file-pct">${info.done ? '✓' : pct + '%'}</span>
+      `;
+      list.appendChild(dot);
+    }
+  }
+
+  function overallProgress() {
+    let loaded = 0, total = 0;
+    for (const info of Object.values(fileProgress)) {
+      loaded += info.loaded || 0;
+      total  += info.total  || 0;
+    }
+    return total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+  }
+
+  function onProgress(progress) {
+    if (!progress || !progress.file) return;
+
+    const key = progress.file;
+    if (!fileProgress[key]) {
+      fileProgress[key] = { loaded: 0, total: 0, done: false };
+    }
+
+    if (progress.status === 'progress') {
+      fileProgress[key].loaded = progress.loaded || 0;
+      fileProgress[key].total  = progress.total  || 0;
+      fileProgress[key].done   = false;
+    } else if (progress.status === 'done') {
+      fileProgress[key].loaded = fileProgress[key].total || progress.loaded || 0;
+      fileProgress[key].done   = true;
+    } else if (progress.status === 'initiate') {
+      fileProgress[key].loaded = 0;
+      fileProgress[key].total  = 0;
+      fileProgress[key].done   = false;
+    }
+
+    const pct = overallProgress();
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-pct').textContent = pct + '%';
+    document.getElementById('progress-text').textContent =
+      progress.status === 'done' ? `已加载: ${key}` : `下载中: ${key}`;
+
+    renderFileList();
+  }
+
+  // ── 加载模型 ───────────────────────────────────────────────────────────────
+  async function loadModel() {
+    const btn = document.getElementById('load-btn');
+    const errBox = document.getElementById('error-box');
+    btn.disabled = true;
+    btn.textContent = '⏳ 正在加载模型…';
+    errBox.style.display = 'none';
+
+    try {
+      const device = await detectDevice();
+
+      document.getElementById('progress-text').textContent = '开始下载…';
+
+      // 关键修复：使用正确的dtype参数 "q4f16"
+      generator = await pipeline(
+        'text-generation',
+        MODEL_ID,
+        {
+          dtype: 'q4f16', // 修复：从 'q4' 改为 'q4f16'
+          device,
+          progress_callback: onProgress,
+        }
+      );
+
+      document.getElementById('progress-bar').style.width = '100%';
+      document.getElementById('progress-pct').textContent = '100%';
+      document.getElementById('progress-text').textContent = '✅ 模型准备就绪！';
+
+      // 显示聊天界面
+      document.getElementById('loader-section').style.display = 'none';
+      document.getElementById('chat-section').style.display = 'block';
+
+    } catch (err) {
+      console.error('模型加载错误:', err);
+      errBox.style.display = 'block';
+      errBox.innerHTML = `
+        ❌ 模型加载失败: ${err.message || String(err)}<br><br>
+        <strong>可能的原因：</strong><br>
+        1. 网络连接问题，无法访问Hugging Face<br>
+        2. 浏览器不支持WebGPU或WebAssembly<br>
+        3. 模型文件暂时不可用<br><br>
+        <strong>解决方案：</strong><br>
+        1. 检查网络连接<br>
+        2. 刷新页面重试<br>
+        3. 使用Chrome或Edge最新版本<br>
+        4. 确保浏览器已启用WebGPU（chrome://flags/#enable-unsafe-webgpu）
+      `;
+      btn.disabled = false;
+      btn.textContent = '🔄 重试';
+    }
+  };
+
+  // ── 字符计数 ──────────────────────────────────────────────────────────
+  function updateCharCount() {
+    const v = document.getElementById('input-text').value.length;
+    document.getElementById('char-count').textContent = `${v} / 2000`;
+  };
+
+  // ── 在对话历史中显示消息 ───────────────────────────────────────────────────────
+  function appendMessage(role, content) {
+    const historyEl = document.getElementById('chat-history');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${role}`;
+
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'message-header';
+    headerDiv.textContent = role === 'user' ? '👤 您' : '🤖 助手';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.textContent = content;
+
+    messageDiv.appendChild(headerDiv);
+    messageDiv.appendChild(contentDiv);
+    historyEl.appendChild(messageDiv);
+    // 滚动到最新消息
+    historyEl.scrollTop = historyEl.scrollHeight;
+  }
+
+  // ── 添加"思考中"状态 ─────────────────────────────────────────────────────
+  function showThinking() {
+    const historyEl = document.getElementById('chat-history');
+    const thinkingDiv = document.createElement('div');
+    thinkingDiv.className = 'thinking';
+    thinkingDiv.id = 'thinking-indicator';
+    thinkingDiv.textContent = '思考中…';
+    historyEl.appendChild(thinkingDiv);
+    historyEl.scrollTop = historyEl.scrollHeight;
+  }
+  function hideThinking() {
+    const indicator = document.getElementById('thinking-indicator');
+    if (indicator) indicator.remove();
+  }
+
+  // ── 执行对话生成 ──────────────────────────────────────────────────────────────
+  async function sendMessage() {
+    if (isGenerating || !generator) return;
+
+    const inputEl = document.getElementById('input-text');
+    const inputText = inputEl.value.trim();
+    if (!inputText) return;
+
+    const sendBtn = document.getElementById('send-btn');
+    const errBox2 = document.getElementById('chat-error-box');
+
+    isGenerating = true;
+    errBox2.style.display = 'none';
+
+    // 显示用户消息
+    appendMessage('user', inputText);
+    // 清空输入框
+    inputEl.value = '';
+    updateCharCount();
+    // 禁用按钮，显示加载状态
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<span class="spinner"></span> 生成中…';
+    // 显示"思考中"指示器
+    showThinking();
+
+    try {
+      // 构建消息数组（符合Transformers.js期望的格式）
+      const messages = [
+        ...conversationHistory,
+        { role: 'user', content: inputText }
+      ];
+
+      console.log("发送的消息:", messages);
+
+      const streamer = new TextStreamer(generator.tokenizer, {
+        skip_prompt: true,
+        skip_special_tokens: true,
+        callback_function: (token) => {
+          // 移除"思考中"指示器，并显示助手消息
+          if (document.getElementById('thinking-indicator')) {
+            hideThinking();
+            appendMessage('assistant', '');
+          }
+          // 将token追加到最后一条助手消息的内容中
+          const assistantMessages = document.querySelectorAll('.message.assistant .message-content');
+          const lastAssistantMsg = assistantMessages[assistantMessages.length - 1];
+          if (lastAssistantMsg) {
+            lastAssistantMsg.textContent += token;
+            // 保持滚动
+            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
+          }
+        },
+      });
+
+      // 调用模型生成回复（使用消息数组格式）
+      const output = await generator(messages, {
+        max_new_tokens: 1024,
+        do_sample: true,
+        temperature: 0.7,
+        top_p: 0.9,
+        top_k: 50,
+        repetition_penalty: 1.1,
+        streamer,
+      });
+
+      // 获取生成的文本
+      let responseText = '';
+      if (output && output.length > 0 && output[0].generated_text) {
+        // 从生成结果中提取助手的回复
+        const generated = output[0].generated_text;
+        if (Array.isArray(generated)) {
+          // 如果是消息数组格式
+          const lastMessage = generated[generated.length - 1];
+          responseText = lastMessage.content || '';
+        } else if (typeof generated === 'string') {
+          // 如果是字符串格式
+          responseText = generated;
+        }
+      }
+
+      // 清理响应
+      responseText = responseText.trim();
+      
+      // 如果响应不为空，加入历史
+      if (responseText && responseText.length > 0) {
+        conversationHistory.push({ role: 'user', content: inputText });
+        conversationHistory.push({ role: 'assistant', content: responseText });
+        
+        // 清理可能的"思考中"残留
+        hideThinking();
+      } else {
+        // 如果没有生成有效内容，添加一条提示
+        hideThinking();
+        appendMessage('assistant', '(未生成有效回复，请尝试重新输入)');
+        conversationHistory.push({ role: 'user', content: inputText });
+      }
+    } catch (err) {
+      console.error('生成错误:', err);
+      hideThinking();
+      errBox2.style.display = 'block';
+      errBox2.textContent = '❌ 生成出错: ' + (err.message || String(err));
+      // 出错时也添加一条提示消息
+      appendMessage('assistant', `[生成出错: ${err.message || '未知错误'}]`);
+      conversationHistory.push({ role: 'user', content: inputText });
+    } finally {
+      isGenerating = false;
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = '发送';
+      // 输入框重新聚焦
+      inputEl.focus();
+    }
+  };
+
+  // ── 键盘快捷键：Ctrl+Enter 或 Cmd+Enter 发送 ───────────────────────────────
+  document.getElementById('input-text').addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault(); // 防止在textarea中换行
+      sendMessage();
+    }
+  });
+
+  // ── 清空对话历史 ──────────────────────────────────────────────────────────────
+  function clearConversation() {
+    const chatHistory = document.getElementById('chat-history');
+    chatHistory.innerHTML = '<div class="message assistant"><div class="message-header">🤖 助手</div><div class="message-content">对话历史已清空。请开始新的对话。</div></div>';
+    conversationHistory = [
+      { role: 'system', content: 'You are a helpful AI assistant.' }
+    ];
+  }
+
+  // ── 连接按钮事件监听器 ──────────────────────────────────────────
+  document.getElementById('load-btn').addEventListener('click', loadModel);
+  document.getElementById('send-btn').addEventListener('click', sendMessage);
+  document.getElementById('input-text').addEventListener('input', updateCharCount);
+  
+  // 添加清空对话按钮（可选）
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = '🗑️ 清空对话';
+  clearBtn.style.cssText = 'width: 100%; padding: 8px; border-radius: var(--radius); border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; margin-top: 8px;';
+  clearBtn.addEventListener('click', clearConversation);
+  document.getElementById('chat-section').appendChild(clearBtn);
+</script>
+
+</body>
+</html>
